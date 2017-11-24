@@ -1,0 +1,78 @@
+Parameters:
+  KeyName:
+    Description: Keypair for SSH access to instance.
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: ww-vpn
+Resources:
+  VpnSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: OpenVPN connections only.
+      SecurityGroupIngress:
+      - IpProtocol: udp
+        FromPort: '1194'
+        ToPort: '1194'
+        CidrIp: 0.0.0.0/0
+  VpnInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: '/'
+      Roles:
+      - !Ref VpnRole
+  VpnConfigS3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: VpnConfigS3Policy
+      PolicyDocument:
+        Statement:
+        - Effect: Allow
+          Action:
+          - s3:GetObject
+          Resource: 'arn:aws:s3:::silly.apps.storage/ww-vpn/*'
+      Roles: 
+      - !Ref VpnRole
+  VpnRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+  Machine:
+    Type: AWS::EC2::Instance
+    Properties:
+      SecurityGroups:
+      - !Ref VpnSecurityGroup
+      - 'SSH Access'
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref VpnInstanceProfile
+      ImageId: ami-55ef662f # Amazon Linux 2017.09.1
+      InstanceType: t2.small
+      UserData: 
+        'Fn::Base64': !Sub |
+          #!/bin/bash
+          yum -y update
+          yum -y install openvpn easy-rsa --enablerepo=epel
+          modprobe iptable_nat
+          echo 1 | tee /proc/sys/net/ipv4/ip_forward
+          iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth0 -j MASQUERADE
+          iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE
+          cd /usr/share/easy-rsa/2.0
+          source ./vars
+          ./clean-all
+          ./pkitool --initca
+          ./pkitool --server ww-vpn
+          ./build-dh 2048
+          cd ./keys
+          openvpn --genkey --secret pfs.key
+          mkdir -p /etc/openvpn/keys
+          for file in ww-vpn.crt ww-vpn.key ca.crt dh2048.pem pfs.key; do
+          cp $file /etc/openvpn/keys/; done
+          aws s3 cp s3://silly.apps.storage/ww-vpn/openvpn-server.conf /etc/openvpn/server.conf
+          service openvpn start
