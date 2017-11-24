@@ -69,10 +69,23 @@ Resources:
           ./pkitool --initca
           ./pkitool --server ww-vpn
           ./build-dh 2048
+          ./pkitool device-laptop
+          ./pkitool device-tablet
+          ./pkitool device-phone
           cd ./keys
           openvpn --genkey --secret pfs.key
           mkdir -p /etc/openvpn/keys
           for file in ww-vpn.crt ww-vpn.key ca.crt dh2048.pem pfs.key; do
           cp $file /etc/openvpn/keys/; done
+          mkdir -p /home/ec2-user/certs
+          for file in device*.key device*.crt ca.crt dh2048.pem pfs.key ; do
+          mv $file /home/ec2-user/certs/; done
           aws s3 cp s3://silly.apps.storage/ww-vpn/openvpn-server.conf /etc/openvpn/server.conf
+          rm /usr/share/easy-rsa/2.0/keys/ca.key
           service openvpn start
+          echo "Copy files under the home directory and delete them." > /home/ec2-user/README
+          chown -R ec2-user:ec2-user /home/ec2-user/
+          aws s3 cp s3://silly.apps.storage/ww-vpn/openvpn-client.conf /home/ec2-user/certs/
+          zip -j /home/ec2-user/ww-vpn.zip /home/ec2-user/certs/*
+          rm -rf /home/ec2-user/certs/
+          chown -R ec2-user:ec2-user /home/ec2-user/
