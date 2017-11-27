@@ -3,6 +3,10 @@ Parameters:
     Description: Keypair for SSH access to instance.
     Type: AWS::EC2::KeyPair::KeyName
     Default: ww-vpn
+  ConfigBucket:
+    Description: S3 bucket where the configuration files are located.
+    Type: String
+    Default: silly.apps.storage
 Resources:
   VpnSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -28,7 +32,7 @@ Resources:
         - Effect: Allow
           Action:
           - s3:GetObject
-          Resource: 'arn:aws:s3:::silly.apps.storage/ww-vpn/*'
+          Resource: !Sub 'arn:aws:s3:::${ConfigBucket}/ww-vpn/*'
       Roles: 
       - !Ref VpnRole
   VpnRole:
@@ -80,12 +84,12 @@ Resources:
           mkdir -p /home/ec2-user/certs
           for file in device*.key device*.crt ca.crt dh2048.pem pfs.key ; do
           mv $file /home/ec2-user/certs/; done
-          aws s3 cp s3://silly.apps.storage/ww-vpn/openvpn-server.conf /etc/openvpn/server.conf
+          aws s3 cp s3://${ConfigBucket}/ww-vpn/openvpn-server.conf /etc/openvpn/server.conf
           rm /usr/share/easy-rsa/2.0/keys/ca.key
           service openvpn start
           echo "Copy files under the home directory and delete them." > /home/ec2-user/README
           chown -R ec2-user:ec2-user /home/ec2-user/
-          aws s3 cp s3://silly.apps.storage/ww-vpn/openvpn-client.conf /home/ec2-user/certs/
+          aws s3 cp s3://${ConfigBucket}/ww-vpn/openvpn-client.conf /home/ec2-user/certs/
           zip -j /home/ec2-user/ww-vpn.zip /home/ec2-user/certs/*
           rm -rf /home/ec2-user/certs/
           chown -R ec2-user:ec2-user /home/ec2-user/
