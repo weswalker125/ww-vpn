@@ -61,35 +61,6 @@ Resources:
       UserData: 
         'Fn::Base64': !Sub |
           #!/bin/bash
-          yum -y update
-          yum -y install openvpn easy-rsa --enablerepo=epel
-          modprobe iptable_nat
-          echo 1 | tee /proc/sys/net/ipv4/ip_forward
-          iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth0 -j MASQUERADE
-          iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE
-          cd /usr/share/easy-rsa/2.0
-          source ./vars
-          ./clean-all
-          ./pkitool --initca
-          ./pkitool --server ww-vpn
-          ./build-dh 2048
-          ./pkitool device-laptop
-          ./pkitool device-tablet
-          ./pkitool device-phone
-          cd ./keys
-          openvpn --genkey --secret pfs.key
-          mkdir -p /etc/openvpn/keys
-          for file in ww-vpn.crt ww-vpn.key ca.crt dh2048.pem pfs.key; do
-          cp $file /etc/openvpn/keys/; done
-          mkdir -p /home/ec2-user/certs
-          for file in device*.key device*.crt ca.crt dh2048.pem pfs.key ; do
-          mv $file /home/ec2-user/certs/; done
-          aws s3 cp s3://${ConfigBucket}/ww-vpn/openvpn-server.conf /etc/openvpn/server.conf
-          rm /usr/share/easy-rsa/2.0/keys/ca.key
-          service openvpn start
-          echo "Copy files under the home directory and delete them." > /home/ec2-user/README
-          chown -R ec2-user:ec2-user /home/ec2-user/
-          aws s3 cp s3://${ConfigBucket}/ww-vpn/openvpn-client.conf /home/ec2-user/certs/
-          zip -j /home/ec2-user/ww-vpn.zip /home/ec2-user/certs/*
-          rm -rf /home/ec2-user/certs/
-          chown -R ec2-user:ec2-user /home/ec2-user/
+          aws s3 cp s3://${ConfigBucket}/ww-vpn/install.sh $HOME/install.sh
+          chmod +x $HOME/install.sh
+          $HOME/install.sh ${ConfigBucket}
