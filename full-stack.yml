@@ -33,6 +33,14 @@ Resources:
           Action:
           - s3:GetObject
           Resource: !Sub 'arn:aws:s3:::${ConfigBucket}/ww-vpn/*'
+        # - Effect: Allow
+        #   Principal:
+        #     Service:
+        #     - ec2.amazonaws.com
+        #   Action:
+        #   - ecr:GetDownloadUrlForLayer
+        #   - ecr:BatchGetImage
+        #   - ecr:BatchCheckLayerAvailability
       Roles: 
       - !Ref VpnRole
   VpnRole:
@@ -47,7 +55,7 @@ Resources:
             Service:
             - ec2.amazonaws.com
           Action:
-          - sts:AssumeRole
+          - sts:AssumeRole 
   Machine:
     Type: AWS::EC2::Instance
     Properties:
@@ -61,6 +69,11 @@ Resources:
       UserData: 
         'Fn::Base64': !Sub |
           #!/bin/bash
-          aws s3 cp s3://${ConfigBucket}/ww-vpn/install.sh $HOME/install.sh
-          chmod +x $HOME/install.sh
-          $HOME/install.sh ${ConfigBucket}
+          yum -y update 
+          yum -y install ec2-net-utils docker
+          service docker start
+          ec2ifup eth1
+          mkdir /tmp/clients
+          # docker login ...
+          docker run --device=/dev/net/tun --cap-add=NET_ADMIN  -v /tmp/clients:/clients 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn/ww-vpn:latest
+          
