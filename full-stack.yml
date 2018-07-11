@@ -7,6 +7,11 @@ Parameters:
     Description: S3 bucket where the configuration files are located.
     Type: String
     Default: silly.apps.storage
+  EniId:
+    Description: Network interface ID to use.
+    Type: String
+    Default: eni-375718a4
+
 Resources:
   VpnSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -31,16 +36,27 @@ Resources:
         Statement:
         - Effect: Allow
           Action:
-          - s3:GetObject
+          - s3:GetObject*
+          - s3:List*
+          - s3:PutObject
           Resource: !Sub 'arn:aws:s3:::${ConfigBucket}/ww-vpn/*'
-        # - Effect: Allow
-        #   Principal:
-        #     Service:
-        #     - ec2.amazonaws.com
-        #   Action:
-        #   - ecr:GetDownloadUrlForLayer
-        #   - ecr:BatchGetImage
-        #   - ecr:BatchCheckLayerAvailability
+        - Effect: Allow
+          Action:
+          - ec2:AttachNetworkInterface
+          - ec2:DescribeNetworkInterfaces
+          - ec2:DetachNetworkInterface
+          Resource: '*'
+        - Effect: Allow
+          Action:
+          - ecr:GetDownloadUrlForLayer
+          - ecr:BatchGetImage
+          - ecr:DescribeImages
+          - ecr:GetAuthorizationToken
+          - ecr:DescribeRepositories
+          - ecr:ListImages
+          - ecr:BatchCheckLayerAvailability
+          - ecr:GetRepositoryPolicy
+          Resource: '*'
       Roles: 
       - !Ref VpnRole
   VpnRole:
@@ -65,15 +81,26 @@ Resources:
       KeyName: !Ref KeyName
       IamInstanceProfile: !Ref VpnInstanceProfile
       ImageId: ami-55ef662f # Amazon Linux 2017.09.1
-      InstanceType: t2.small
+      InstanceType: t2.micro
       UserData: 
-        'Fn::Base64': !Sub |
-          #!/bin/bash
-          yum -y update 
-          yum -y install ec2-net-utils docker
-          service docker start
-          ec2ifup eth1
-          mkdir /tmp/clients
-          # docker login ...
-          docker run --device=/dev/net/tun --cap-add=NET_ADMIN  -v /tmp/clients:/clients 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn/ww-vpn:latest
-          
+        'Fn::Base64': !Sub
+          - |
+            #!/bin/bash
+            yum -y update 
+            yum -y install ec2-net-utils docker jq
+            az=$(curl http://169.254.169.254/latest/meta-data/placement/availability-zone/)
+            aws configure set region ${Region}
+            service docker start
+            instance_id=$(wget -q -O - http://169.254.169.254/latest/meta-data/instance-id)
+            attachment_id=$(aws ec2 describe-network-interfaces --network-interface-ids ${EniId} | jq '.NetworkInterfaces[0].Attachment.AttachmentId')
+            aws ec2 detach-network-interface --attachment-id $attachment_id --force
+            until aws ec2 attach-network-interface --device-index 1 --instance-id $instance_id --network-interface-id ${EniId}; do
+              sleep 5
+            done
+            ec2ifup eth1
+            mkdir /tmp/clients
+            $(aws ecr get-login --no-include-email --region ${Region})
+            docker run -d --device=/dev/net/tun --cap-add=NET_ADMIN  -v /tmp/clients:/clients 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn:latest
+            until [ -e /tmp/clients/ww-vpn-5.conf ]; do echo "VPN configs not yet available..."; sleep 5; done
+            for i in {1..5}; do aws s3 cp /tmp/clients/ww-vpn-$i.conf s3://${ConfigBucket}/ww-vpn/${StackName}/; done
+          - { EniId: !Ref EniId, Region: '${az::-1}', StackName: !Ref 'AWS::StackName' }
