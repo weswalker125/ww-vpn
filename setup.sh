@@ -25,7 +25,8 @@ function init() {
     for i in {1..5}; do
         mv /pki/issued/ww-vpn-${i}.crt /pki/issued/current.crt
         mv /pki/private/ww-vpn-${i}.key /pki/private/current.key
-        sed -e "s/%CLIENT%/ww-vpn-${i}/g" \
+        sed -e "s/%SERVER_NAME%/vpn.dubyatoo.com/g" \
+            -e "s/%CLIENT%/ww-vpn-${i}/g" \
             -e '/%PFS_KEY%/{r /pki/private/pfs.key' \
             -e 'd}' \
             -e '/%DH_PEM%/{r /pki/dh.pem' \
@@ -45,6 +46,7 @@ if [ ! -e /etc/openvpn/server.conf ]; then
     init
 fi
 
+iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth0 -j MASQUERADE
 iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE
 
 echo "Starting openvpn server..."
