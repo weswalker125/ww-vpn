@@ -34,6 +34,12 @@ Resources:
         FromPort: '22'
         ToPort: '22'
         CidrIp: 0.0.0.0/0
+  VpnNetworkInterface:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      GroupSet:
+        - !Ref VpnSecurityGroup
+      SubnetId: subnet-43673e68
   VpnInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -93,6 +99,9 @@ Resources:
       IamInstanceProfile: !Ref VpnInstanceProfile
       ImageId: ami-cfe4b2b0 # Amazon Linux 2018.03.0
       InstanceType: t2.micro
+      NetworkInterfaces:
+        - NetworkIntefaceId: !Ref VpnNetworkInterface
+          DeviceIndex: '1'
       UserData: 
         'Fn::Base64': !Sub
           - |
