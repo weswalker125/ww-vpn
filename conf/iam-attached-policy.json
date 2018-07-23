@@ -1,0 +1,36 @@
+{
+    "Statement": [
+        {
+            "Action": [
+                "s3:GetObject*",
+                "s3:List*",
+                "s3:PutObject*"
+            ],
+            "Resource": "arn:aws:s3:::silly.apps.storage/ww-vpn/*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "ec2:AttachNetworkInterface",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DetachNetworkInterace"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "ecr:DescribeImages",
+                "ecr:GetAuthorizationToken",
+                "ecr:DescribeRepositories",
+                "ecr:ListImages",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetRepositoryPolicy"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        }
+    ]
+}

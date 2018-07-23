@@ -1,0 +1,38 @@
+#!/bin/bash
+yum -y update 
+yum -y install ec2-net-utils docker jq
+aws configure set region {{ vpn_region }}
+service docker start
+mkdir /tmp/clients
+
+# Attach ENI
+instance_id=$(wget -q -O - http://169.254.169.254/latest/meta-data/instance-id)
+attachment_id=$(aws ec2 describe-network-interfaces --network-interface-ids {{ vpn_eni_id }} | jq -r '.NetworkInterfaces[0].Attachment.AttachmentId')
+aws ec2 detach-network-interface --attachment-id $attachment_id --force
+until aws ec2 attach-network-interface --device-index 1 --instance-id $instance_id --network-interface-id {{ vpn_eni_id }}; do
+    sleep 5
+done
+ec2ifup eth1
+
+modprobe iptable_nat
+echo 1 | tee /proc/sys/net/ipv4/ip_forward
+iptables -A INPUT -p udp --dport 1194 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p udp --sport 1194 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth+ -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth+ -j MASQUERADE
+iptables-save
+
+# Log in to Docker Registry
+$(aws ecr get-login --no-include-email --region {{ vpn_region }})
+
+# Run container
+if [ ! -z "{{ vpn_config_s3_file }}" ]; then
+    aws s3 cp {{ vpn_config_s3_file }} /tmp/server.conf
+    MOUNT_CONFIG=" -v /tmp/server.conf:/etc/openvpn/server.conf"
+fi
+docker run -d -p 1194:1194/udp --device=/dev/net/tun --cap-add=NET_ADMIN -v /tmp/clients:/clients $MOUNT_CONFIG 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn:latest
+
+# Upload generated OVPN Configs to S3.
+until [ -e /tmp/clients/ww-vpn-5.conf ]; do echo "VPN configs not yet available..."; sleep 5; done
+for i in {1..5}; do aws s3 cp /tmp/clients/ww-vpn-$i.conf s3://{{ vpn_config_bucket }}/ww-vpn/{{ vpn_deploy_id }}/; done
+aws s3 cp /tmp/clients/ww-vpn-server.conf s3://{{ vpn_config_bucket }}/ww-vpn/{{ vpn_deploy_id }}/;
