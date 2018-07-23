@@ -75,19 +75,20 @@ Resources:
   Machine:
     Type: AWS::EC2::Instance
     Properties:
-      SecurityGroups:
-      - !Ref VpnSecurityGroup
-      - 'SSH Access'
+      SecurityGroupIds:
+      - sg-e2934f9d
+      - sg-9a919cec
       KeyName: !Ref KeyName
       IamInstanceProfile: !Ref VpnInstanceProfile
-      ImageId: ami-55ef662f # Amazon Linux 2017.09.1
+      ImageId: ami-cfe4b2b0 # Amazon Linux 2018.03.0
       InstanceType: t2.micro
+      SubnetId: subnet-43673e68
       UserData: 
         'Fn::Base64': !Sub
           - |
             #!/bin/bash
             yum -y update 
-            yum -y install ec2-net-utils docker jq
+            yum -y install ec2-net-utils docker jq openvpn
             aws configure set region ${Region}
             service docker start
             mkdir /tmp/clients
@@ -101,40 +102,21 @@ Resources:
             done
             ec2ifup eth1
 
-            # Firewall rules
-            iptables -F FORWARD
-            iptables -F INPUT
-            iptables -F OUTPUT
-            iptables -X
-            iptables -P INPUT DROP
-            iptables -P OUTPUT DROP
-            iptables -P FORWARD DROP
-            iptables -A INPUT -i lo -j ACCEPT
-            iptables -A OUTPUT -o lo -j ACCEPT
-            iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-            iptables -A INPUT -p tcp --dport 22 -m state --state NEW -s 0.0.0.0/0 -j ACCEPT
-            iptables -A INPUT -p udp --dport 1194 -m state --state NEW -s 0.0.0.0/0 -j ACCEPT
-            iptables -I OUTPUT 1 -m state --state RELATED,ESTABLISHED -j ACCEPT
-            iptables -A OUTPUT -p udp --dport 53 -m state --state NEW -j ACCEPT
-            iptables -A OUTPUT -p tcp --dport 53 -m state --state NEW -j ACCEPT
-            iptables -A OUTPUT -p tcp --dport 80 -m state --state NEW -j ACCEPT
-            iptables -A OUTPUT -p tcp --dport 443 -m state --state NEW -j ACCEPT
-            iptables -t nat -A POSTROUTING -s 172.16.100.0/24 -o eth0 -j MASQUERADE
-            iptables -A INPUT -i tun0 -j ACCEPT
-            iptables -A FORWARD -i tun0 -j ACCEPT
-            iptables -A OUTPUT -o tun0 -j ACCEPT
-            iptables -A FORWARD -i tun0 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-            iptables -A FORWARD -i eth0 -o tun+ -m state --state RELATED,ESTABLISHED -j ACCEPT
-            iptables -A FORWARD -i tun0 -s 172.16.100.0/24 -d 0.0.0.0/0 -j ACCEPT
-            iptables -A FORWARD -i tun0 -s 172.16.100.0/24 -d 172.16.100.0/24 -j DROP
+            modprobe iptable_nat
+            echo 1 | tee /proc/sys/net/ipv4/ip_forward
+            iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth+ -j MASQUERADE
+            iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth+ -j MASQUERADE
 
             # Log in to Docker Registry
             $(aws ecr get-login --no-include-email --region ${Region})
             
             # Run container
-            docker run -d -p 1194:1194/udp --device=/dev/net/tun --cap-add=NET_ADMIN -v /tmp/clients:/clients 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn:latest
+            docker run -p 1194:1194/udp --device=/dev/net/tun --cap-add=NET_ADMIN -v /tmp/clients:/clients 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn:latest
+            cp /tmp/clients/ww-vpn-server.conf /etc/openvpn/server.conf
+            service openvpn start
             
             # Upload generated OVPN Configs to S3.
             until [ -e /tmp/clients/ww-vpn-5.conf ]; do echo "VPN configs not yet available..."; sleep 5; done
             for i in {1..5}; do aws s3 cp /tmp/clients/ww-vpn-$i.conf s3://${ConfigBucket}/ww-vpn/${StackName}/; done
+            aws s3 cp /tmp/clients/ww-vpn-server.conf s3://${ConfigBucket}/ww-vpn/${StackName}/;
           - { EniId: !Ref EniId, Region: !Ref 'AWS::Region', StackName: !Ref 'AWS::StackName' }

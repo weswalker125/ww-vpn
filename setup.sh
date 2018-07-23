@@ -19,7 +19,8 @@ function init() {
         -e '/%CRT%/{r /pki/issued/server.crt' \
         -e 'd}' \
         -e '/%KEY%/{r /pki/private/server.key' \
-        -e 'd}' /init/openvpn-server.conf >/etc/openvpn/server.conf
+        -e 'd}' /init/openvpn-server.conf >/clients/ww-vpn-server.conf
+    cp /clients/ww-vpn-server.conf /etc/openvpn/server.conf
 
     # Generate client config files
     for i in {1..5}; do
@@ -46,8 +47,8 @@ if [ ! -e /etc/openvpn/server.conf ]; then
     init
 fi
 
-iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth0 -j MASQUERADE
-iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 192.168.254.0/24 -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 192.168.255.0/24 -o eth0 -j MASQUERADE
 
 echo "Starting openvpn server..."
 openvpn --config /etc/openvpn/server.conf
