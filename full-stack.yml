@@ -11,16 +11,28 @@ Parameters:
     Description: Network interface ID to use.
     Type: String
     Default: eni-375718a4
-
+  ServerConfig:
+    Description: S3 URL for OpenVPN server configuration.
+    Type: String
+    Default: ''
+  # VpcId:
+  #   Description: VPC ID to use.
+  #   Type: String
+  #   Default: vpc-fe5f8a9a
 Resources:
   VpnSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: OpenVPN connections only.
+      # VpcId: !Ref VpcId
       SecurityGroupIngress:
       - IpProtocol: udp
         FromPort: '1194'
         ToPort: '1194'
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
         CidrIp: 0.0.0.0/0
   VpnInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -75,14 +87,12 @@ Resources:
   Machine:
     Type: AWS::EC2::Instance
     Properties:
-      SecurityGroupIds:
-      - sg-e2934f9d
-      - sg-9a919cec
+      SecurityGroups:
+        - !Ref VpnSecurityGroup
       KeyName: !Ref KeyName
       IamInstanceProfile: !Ref VpnInstanceProfile
       ImageId: ami-cfe4b2b0 # Amazon Linux 2018.03.0
       InstanceType: t2.micro
-      SubnetId: subnet-43673e68
       UserData: 
         'Fn::Base64': !Sub
           - |
@@ -106,12 +116,17 @@ Resources:
             echo 1 | tee /proc/sys/net/ipv4/ip_forward
             iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth+ -j MASQUERADE
             iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth+ -j MASQUERADE
+            iptables-save
 
             # Log in to Docker Registry
             $(aws ecr get-login --no-include-email --region ${Region})
             
             # Run container
-            docker run -p 1194:1194/udp --device=/dev/net/tun --cap-add=NET_ADMIN -v /tmp/clients:/clients 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn:latest
+            if [ ! -z "${ServerConfig}" ]; then
+              aws s3 cp ${ServerConfig} /tmp/server.conf
+              MOUNT_CONFIG=" -v /tmp/server.conf:/etc/openvpn/server.conf"
+            fi
+            docker run -p 1194:1194/udp --device=/dev/net/tun --cap-add=NET_ADMIN -v /tmp/clients:/clients $MOUNT_CONFIG 686155034699.dkr.ecr.us-east-1.amazonaws.com/ww-vpn:latest
             cp /tmp/clients/ww-vpn-server.conf /etc/openvpn/server.conf
             service openvpn start
             
@@ -119,4 +134,4 @@ Resources:
             until [ -e /tmp/clients/ww-vpn-5.conf ]; do echo "VPN configs not yet available..."; sleep 5; done
             for i in {1..5}; do aws s3 cp /tmp/clients/ww-vpn-$i.conf s3://${ConfigBucket}/ww-vpn/${StackName}/; done
             aws s3 cp /tmp/clients/ww-vpn-server.conf s3://${ConfigBucket}/ww-vpn/${StackName}/;
-          - { EniId: !Ref EniId, Region: !Ref 'AWS::Region', StackName: !Ref 'AWS::StackName' }
+          - { EniId: !Ref EniId, Region: !Ref 'AWS::Region', StackName: !Ref 'AWS::StackName', ServerConfig: !Ref ServerConfig }
