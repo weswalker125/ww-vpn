@@ -1,0 +1,72 @@
+- hosts: localhost
+  gather_facts: yes
+  vars:
+    - vpn_region: us-east-1
+    - vpn_eni_id: eni-375718a4
+    - vpn_key_name: ww-vpn
+    - vpn_instance_type: t2.micro
+    - vpn_ami_id: ami-cfe4b2b0
+    - vpn_deploy_id: "{{ ansible_date_time.epoch }}"
+    - vpn_config_bucket: silly.apps.storage
+    - vpn_config_s3_file: ''
+    - vpn_server_config_template: "{{ lookup('template', 'conf/openvpn-server.conf') }}"
+    - vpn_client_config_template: "{{ lookup('template', 'conf/openvpn-client.conf') }}"
+
+  tasks:
+    - name: Get ENI facts
+      ec2_eni_facts:
+        filters:
+          network-interface-id: "{{ vpn_eni_id }}"
+      register: eni_search
+    
+    - debug: var=vpn_deploy_id
+    - debug: var=eni_search
+
+    - ec2_eni:
+        eni_id: "{{ vpn_eni_id }}"
+        region: "{{ vpn_region }}"
+        attached: no
+        force_detach: yes
+
+    - name: Security Group
+      ec2_group:
+        name: OpenVPN-SG
+        description: SG with rules for UDP traffic for OpenVPN
+        vpc_id: "{{ eni_search.network_interfaces.0.vpc_id }}"
+        region: "{{ vpn_region }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: udp
+            from_port: 1194
+            to_port: 1194
+            cidr_ip: 0.0.0.0/0
+    
+    - name: IAM Policy
+      iam_policy:
+        iam_type: role
+        iam_name: VpnRole
+        policy_name: IDK
+        policy_document: conf/iam-attached-policy.json
+        state: present
+
+    - name: IAM Role
+      iam_role:
+        name: VpnRole
+        assume_role_policy_document: "{{ lookup('file', 'conf/iam-trust-policy.json') }}"
+        description: "Role to enable ECS/ENI/S3 accesses"
+
+    - name: EC2 Instance
+      ec2:
+        region: "{{ vpn_region }}"
+        key_name: "{{ vpn_key_name }}"
+        # group: OpenVPN-SG
+        instance_type: "{{ vpn_instance_type }}"
+        image: "{{ vpn_ami_id }}"
+        # vpc_subnet_id: "{{ eni_search.network_interfaces.0.subnet_id }}"
+        network_interface: "{{ vpn_eni_id }}"
+        instance_profile_name: VpnRole
+        user_data: "{{ lookup('template', 'conf/user-data.sh.j2') }}"
+        count: 1

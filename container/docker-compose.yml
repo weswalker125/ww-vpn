@@ -1,0 +1,6 @@
+version: '3'
+services:
+  vpn:
+    build: ./
+    expose: [1194]
+    network_mode: "host"

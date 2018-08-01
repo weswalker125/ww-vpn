@@ -1,0 +1,81 @@
+#!/bin/bash
+yum -y update 
+yum -y install jq openvpn easy-rsa --enablerepo=epel
+aws configure set region {{ vpn_region }}
+mkdir -p /tmp/clients
+
+modprobe iptable_nat
+echo 1 | tee /proc/sys/net/ipv4/ip_forward
+iptables -A FORWARD -i eth1 -o eth0 -j ACCEPT
+iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth+ -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth+ -j MASQUERADE
+iptables-save
+
+if [ ! -z "{{ vpn_config_s3_file }}" ]; then
+    aws s3 cp {{ vpn_config_s3_file }} /etc/openvpn/server.conf
+else
+    cd /usr/share/easy-rsa/3
+    ./easyrsa init-pki
+    # Create CA at ./pki/ca.crt
+    echo "ww-vpn-ca" | ./easyrsa build-ca nopass
+    # Create server cert at ./pki/issued/*.crt, server key at ./pki/private/*.key
+    ./easyrsa build-server-full server nopass
+    # Create client certs at ./pki/issued/*.crt, server key at ./pki/private/*.key
+    for i in {1..20}; do ./easyrsa build-client-full ww-vpn-${i} nopass; done
+    # Create diffie-hellman parameters at ./pki/dh.pem
+    ./easyrsa gen-dh
+    openvpn --genkey --secret ./pki/private/pfs.key
+    mkdir -p /etc/openvpn/keys
+    rm ./pki/private/ca.key
+    find . -type f -name "*.crt" -exec cp {} /etc/openvpn/keys/ \;
+    find . -type f -name "*.key" -exec cp {} /etc/openvpn/keys/ \;
+    find . -type f -name "*.pem" -exec cp {} /etc/openvpn/keys/ \;
+
+    cat >/etc/openvpn/server.conf.template <<EOL
+{{ vpn_server_config_template }}
+EOL
+
+    cat >/etc/openvpn/client.conf.template <<EOL
+{{ vpn_client_config_template }}
+EOL
+
+    # Generate server config file
+    sed -e '/%PFS_KEY%/{r ./pki/private/pfs.key' \
+        -e 'd}' \
+        -e '/%DH_PEM%/{r ./pki/dh.pem' \
+        -e 'd}' \
+        -e '/%CA_CRT%/{r ./pki/ca.crt' \
+        -e 'd}' \
+        -e '/%CRT%/{r ./pki/issued/server.crt' \
+        -e 'd}' \
+        -e '/%KEY%/{r ./pki/private/server.key' \
+        -e 'd}' /etc/openvpn/server.conf.template >/etc/openvpn/server.conf
+    cp /etc/openvpn/server.conf /tmp/clients/ww-vpn-server.conf
+
+    # Generate client config files
+    for i in {1..20}; do
+        mv ./pki/issued/ww-vpn-${i}.crt ./pki/issued/current.crt
+        mv ./pki/private/ww-vpn-${i}.key ./pki/private/current.key
+        sed -e "s/%SERVER_NAME%/vpn.dubyatoo.com/g" \
+            -e "s/%CLIENT%/ww-vpn-${i}/g" \
+            -e '/%PFS_KEY%/{r ./pki/private/pfs.key' \
+            -e 'd}' \
+            -e '/%DH_PEM%/{r ./pki/dh.pem' \
+            -e 'd}' \
+            -e '/%CA_CRT%/{r ./pki/ca.crt' \
+            -e 'd}' \
+            -e '/%CRT%/{r ./pki/issued/current.crt' \
+            -e 'd}' \
+            -e '/%KEY%/{r ./pki/private/current.key' \
+            -e 'd}' /etc/openvpn/client.conf.template >/tmp/clients/ww-vpn-${i}.conf
+        rm ./pki/issued/current.crt ./pki/private/current.key
+    done
+
+    for i in {1..20}; do aws s3 cp /tmp/clients/ww-vpn-$i.conf s3://{{ vpn_config_bucket }}/ww-vpn/{{ vpn_deploy_id }}/; done
+    aws s3 cp /tmp/clients/ww-vpn-server.conf s3://{{ vpn_config_bucket }}/ww-vpn/{{ vpn_deploy_id }}/
+fi
+
+# Start OpenVPN
+service openvpn start
+chkconfig --add openvpn
+chkconfig openvpn on
