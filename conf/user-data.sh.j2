@@ -17,9 +17,10 @@ ec2ifup eth1
 modprobe iptable_nat
 echo 1 | tee /proc/sys/net/ipv4/ip_forward
 iptables -A INPUT -p udp --dport 1194 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-iptables -A OUTPUT -p udp --sport 1194 -m conntrack --ctstate ESTABLISHED -j ACCEPT
-iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth+ -j MASQUERADE
-iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth+ -j MASQUERADE
+# iptables -A OUTPUT -p udp --sport 1194 -m conntrack --ctstate ESTABLISHED -j ACCEPT
+# iptables -t nat -A POSTROUTING -s 10.4.0.1/2 -o eth+ -j MASQUERADE
+# iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth+ -j MASQUERADE
+# iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
 iptables-save
 
 # Log in to Docker Registry

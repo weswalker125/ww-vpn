@@ -47,8 +47,8 @@ if [ ! -e /etc/openvpn/server.conf ]; then
     init
 fi
 
-iptables -t nat -A POSTROUTING -s 192.168.254.0/24 -o eth0 -j MASQUERADE
-iptables -t nat -A POSTROUTING -s 192.168.255.0/24 -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 10.8.0.0/16 -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 172.17.0.2/16 -o eth0 -j MASQUERADE
 
 echo "Starting openvpn server..."
 openvpn --config /etc/openvpn/server.conf
