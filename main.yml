@@ -9,6 +9,8 @@
     - vpn_deploy_id: "{{ ansible_date_time.epoch }}"
     - vpn_config_bucket: silly.apps.storage
     - vpn_config_s3_file: ''
+    - vpn_server_config_template: "{{ lookup('template', 'conf/openvpn-server.conf') }}"
+    - vpn_client_config_template: "{{ lookup('template', 'conf/openvpn-client.conf') }}"
 
   tasks:
     - name: Get ENI facts
@@ -16,9 +18,14 @@
         filters:
           network-interface-id: "{{ vpn_eni_id }}"
       register: eni_search
-      when: vpn_eni_id is defined
     
     - debug: var=eni_search
+
+    - ec2_eni:
+        eni_id: "{{ vpn_eni_id }}"
+        region: "{{ vpn_region }}"
+        attached: no
+        force_detach: yes
 
     - name: Security Group
       ec2_group:
@@ -54,10 +61,11 @@
       ec2:
         region: "{{ vpn_region }}"
         key_name: "{{ vpn_key_name }}"
-        group: OpenVPN-SG
+        # group: OpenVPN-SG
         instance_type: "{{ vpn_instance_type }}"
         image: "{{ vpn_ami_id }}"
-        vpc_subnet_id: "{{ eni_search.network_interfaces.0.subnet_id }}"
+        # vpc_subnet_id: "{{ eni_search.network_interfaces.0.subnet_id }}"
+        network_interface: "{{ vpn_eni_id }}"
         instance_profile_name: VpnRole
         user_data: "{{ lookup('template', 'conf/user-data.sh.j2') }}"
         count: 1
