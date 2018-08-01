@@ -19,6 +19,7 @@
           network-interface-id: "{{ vpn_eni_id }}"
       register: eni_search
     
+    - debug: var=vpn_deploy_id
     - debug: var=eni_search
 
     - ec2_eni:
