@@ -2,10 +2,10 @@
   gather_facts: yes
   vars:
     - vpn_region: us-east-1
-    - vpn_eni_id: eni-375718a4
+    - vpn_eni_id: eni-00bf0a981c3969a79
     - vpn_key_name: ww-vpn
     - vpn_instance_type: t2.micro
-    - vpn_ami_id: ami-cfe4b2b0
+    - vpn_ami_id: ami-0756fbca465a59a30
     - vpn_deploy_id: "{{ ansible_date_time.epoch }}"
     - vpn_config_bucket: silly.apps.storage
     - vpn_config_s3_file: ''
