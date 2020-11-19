@@ -14,22 +14,24 @@
 
   tasks:
     - name: Get ENI facts
-      ec2_eni_facts:
+      amazon.aws.ec2_eni_info:
         filters:
           network-interface-id: "{{ vpn_eni_id }}"
+        region: "{{ vpn_region }}"
       register: eni_search
     
     - debug: var=vpn_deploy_id
     - debug: var=eni_search
 
-    - ec2_eni:
+    - amazon.aws.ec2_eni:
         eni_id: "{{ vpn_eni_id }}"
+        subnet_id: "{{ eni_search.network_interfaces.0.subnet_id }}"
         region: "{{ vpn_region }}"
         attached: no
         force_detach: yes
 
     - name: Security Group
-      ec2_group:
+      amazon.aws.ec2_group:
         name: OpenVPN-SG
         description: SG with rules for UDP traffic for OpenVPN
         vpc_id: "{{ eni_search.network_interfaces.0.vpc_id }}"
@@ -59,7 +61,7 @@
         description: "Role to enable ECS/ENI/S3 accesses"
 
     - name: EC2 Instance
-      ec2:
+      amazon.aws.ec2:
         region: "{{ vpn_region }}"
         key_name: "{{ vpn_key_name }}"
         # group: OpenVPN-SG
