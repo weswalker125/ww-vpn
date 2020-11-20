@@ -12,6 +12,8 @@
     - vpn_config_s3_file: ''
     - vpn_server_config_template: "{{ lookup('template', 'conf/openvpn-server.conf') }}"
     - vpn_client_config_template: "{{ lookup('template', 'conf/openvpn-client.conf') }}"
+    - vpn_domain_root: ww-vpn.com
+    - vpn_url: thisdeployment.ww-vpn.com
 
   tasks:
     - name: Create the VPC to hold the resources created within
@@ -115,3 +117,14 @@
           Name: "ww-vpn"
         count_tag: 
           Name: "ww-vpn"
+    
+    - name: DNS entry
+      community.aws.route53:
+        state: present
+        zone: "{{ vpn_domain_root }}"
+        record: "{{ vpn_url }}"
+        type: A
+        ttl: 7200
+        value:
+          - "{{ eip.public_ip }}"
+        wait: yes
