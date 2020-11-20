@@ -1,8 +1,18 @@
 #!/bin/bash
-yum -y update 
-yum -y install jq openvpn easy-rsa --enablerepo=epel
+amazon-linux-extras install epel
+yum-config-manager --enable epel
+yum -y install jq openvpn easy-rsa amazon-cloudwatch-agent --enablerepo=epel
 aws configure set region {{ vpn_region }}
-mkdir -p /tmp/clients
+mkdir -p /tmp/clients /tmp/setup
+
+# AWS Logs
+cd /tmp/setup
+curl https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py -O
+chmod +x ./awslogs-agent-setup.py
+cat >./awslogs.conf <<EOL
+{{ vpn_awslogs_config_template }}
+EOL
+amazon-cloudwatch-agent-ctl -a start -m ec2 -c file:///tmp/setup/awslogs.conf
 
 modprobe iptable_nat
 echo 1 | tee /proc/sys/net/ipv4/ip_forward
@@ -76,6 +86,5 @@ EOL
 fi
 
 # Start OpenVPN
-service openvpn start
-chkconfig --add openvpn
-chkconfig openvpn on
+systemctl enable openvpn@server
+systemctl start openvpn@server
